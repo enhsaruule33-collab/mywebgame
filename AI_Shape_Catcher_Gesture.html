@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Shape Catcher — Дүрсний мөрдөгч</title>
+<style>
+  *{box-sizing:border-box}
+  body{
+    margin:0;font-family:Arial,system-ui,sans-serif;
+    background:linear-gradient(135deg,#eef7ff,#fff8e8);
+    color:#203040;overflow:hidden
+  }
+  header{
+    height:76px;background:white;display:flex;align-items:center;
+    justify-content:space-between;padding:0 28px;
+    box-shadow:0 2px 12px #0001;position:relative;z-index:5
+  }
+  h1{margin:0;font-size:26px;color:#234d78}
+  .stats{display:flex;gap:12px;align-items:center;font-weight:700}
+  .pill{background:#edf5ff;border-radius:20px;padding:10px 16px}
+  button{
+    border:0;border-radius:14px;padding:11px 17px;font-size:15px;
+    font-weight:700;cursor:pointer;background:#3478c9;color:white
+  }
+  button:hover{filter:brightness(1.06)}
+  main{height:calc(100vh - 76px);display:flex;gap:14px;padding:14px}
+  #game{
+    flex:1;position:relative;background:white;border-radius:22px;
+    overflow:hidden;box-shadow:0 5px 22px #0001;min-width:0
+  }
+  #instruction{
+    position:absolute;left:18px;top:16px;right:18px;z-index:4;
+    background:#ffffffed;border-radius:16px;padding:13px 18px;
+    font-size:18px;font-weight:700;text-align:center
+  }
+  #basket{
+    position:absolute;right:25px;bottom:24px;width:170px;height:125px;
+    border:7px dashed #d48b28;border-radius:22px 22px 45px 45px;
+    background:#fff1c9;display:flex;align-items:center;justify-content:center;
+    font-size:23px;font-weight:800;color:#9a651d;z-index:2
+  }
+  #basket:before{
+    content:"";position:absolute;top:-22px;left:18px;right:18px;height:24px;
+    border:6px solid #d48b28;border-bottom:0;border-radius:50%
+  }
+  .shape{
+    position:absolute;width:78px;height:78px;display:flex;
+    align-items:center;justify-content:center;user-select:none;
+    cursor:grab;z-index:3;transition:transform .08s
+  }
+  .shape.selected{transform:scale(1.12);filter:drop-shadow(0 8px 9px #0004)}
+  .circle{border-radius:50%;background:#5aa9e6}
+  .square{background:#75c878;border-radius:8px}
+  .triangle{
+    width:0;height:0;border-left:43px solid transparent;
+    border-right:43px solid transparent;border-bottom:80px solid #f3b63f;
+  }
+  .triangle.selected{transform:scale(1.12)}
+  #side{
+    width:290px;background:white;border-radius:22px;padding:17px;
+    box-shadow:0 5px 22px #0001;display:flex;flex-direction:column;gap:13px
+  }
+  #cameraBox{position:relative;background:#172333;border-radius:16px;overflow:hidden}
+  video{width:100%;display:block;transform:scaleX(-1);opacity:.85}
+  #handStatus{
+    position:absolute;left:8px;bottom:8px;background:#000b;color:white;
+    border-radius:10px;padding:7px 10px;font-size:13px
+  }
+  .legend{font-size:14px;line-height:1.55;background:#f5f9fd;padding:12px;border-radius:13px}
+  .legend b{color:#234d78}
+  #message{min-height:55px;background:#fff7df;border-radius:13px;padding:12px;font-size:15px}
+  #nextBtn{background:#27a36b}
+  #resetBtn{background:#777}
+  #startBtn{background:#f09a35}
+  .hint{font-size:13px;color:#667;text-align:center}
+  @media(max-width:850px){
+    body{overflow:auto}.main{height:auto}
+    main{height:auto;flex-direction:column}
+    #side{width:100%} #game{height:600px}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🤖 AI Shape Catcher — Дүрсний мөрдөгч</h1>
+  <div class="stats">
+    <div class="pill">Оноо: <span id="score">0</span></div>
+    <div class="pill">Үе: <span id="level">1</span>/5</div>
+    <button id="startBtn">📷 Камер асаах</button>
+  </div>
+</header>
+
+<main>
+  <section id="game">
+    <div id="instruction">🎯 Зөв дүрсийг гараараа бариад 🧺 сагс руу зөөгөөрэй!</div>
+    <div id="basket">🧺 САГС</div>
+  </section>
+
+  <aside id="side">
+    <div id="cameraBox">
+      <video id="video" autoplay muted playsinline></video>
+      <div id="handStatus">Камер асаагүй байна</div>
+    </div>
+
+    <div class="legend">
+      <b>✋ Гар удирдлага</b><br>
+      👉 Долоовор хуруу — заах<br>
+      🤏 Эрхий + долоовор — <b>барих</b><br>
+      ✊ Хуруугаа хумих — суллах<br>
+      🖐️ Гараа хөдөлгө — дүрсийг зөө
+    </div>
+
+    <div id="message">“Камер асаах” товчийг дарж эхлээрэй.</div>
+    <button id="nextBtn">➡️ Дараагийн даалгавар</button>
+    <button id="resetBtn">🔄 Дахин эхлүүлэх</button>
+    <div class="hint">Chrome дээр ажиллуулахад тохиромжтой.</div>
+  </aside>
+</main>
+
+<script type="module">
+import {HandLandmarker, FilesetResolver}
+  from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm";
+
+const game=document.getElementById("game");
+const video=document.getElementById("video");
+const scoreEl=document.getElementById("score");
+const levelEl=document.getElementById("level");
+const message=document.getElementById("message");
+const status=document.getElementById("handStatus");
+const startBtn=document.getElementById("startBtn");
+const nextBtn=document.getElementById("nextBtn");
+const resetBtn=document.getElementById("resetBtn");
+
+let handLandmarker=null, stream=null, running=false;
+let score=0, level=1, target="triangle", shapes=[];
+let held=null, lastX=0,lastY=0,lastTime=0;
+
+const levels=[
+  {target:"triangle", name:"ГУРВАЛЖИН", count:6},
+  {target:"circle", name:"ДУГУЙ", count:7},
+  {target:"square", name:"ДӨРВӨЛЖИН", count:8},
+  {target:"triangle", name:"ГУРВАЛЖИН", count:9},
+  {target:"circle", name:"ДУГУЙ", count:10}
+];
+
+function rand(a,b){return Math.random()*(b-a)+a}
+
+function makeShape(type,x,y){
+  const el=document.createElement("div");
+  el.className="shape "+type;
+  el.dataset.type=type;
+  if(type==="triangle") el.innerHTML="";
+  el.style.left=x+"px"; el.style.top=y+"px";
+  game.appendChild(el);
+  shapes.push(el);
+  return el;
+}
+
+function clearShapes(){
+  shapes.forEach(s=>s.remove()); shapes=[];
+  held=null;
+}
+
+function spawnLevel(){
+  clearShapes();
+  const L=levels[level-1];
+  target=L.target;
+  levelEl.textContent=level;
+  document.getElementById("instruction").textContent=
+    `🎯 ${L.name}-ийг гараараа бариад 🧺 сагсанд хий!`;
+  message.innerHTML=`<b>Зорилго:</b> ${L.name}-ийг олоорой. 🤏 Pinch хийж бариад сагс руу зөөнө.`;
+  const rect=game.getBoundingClientRect();
+  const types=["circle","square","triangle"];
+  for(let i=0;i<L.count;i++){
+    let type=types[Math.floor(Math.random()*types.length)];
+    if(i===0) type=target;
+    let x=rand(40,Math.max(50,rect.width-260));
+    let y=rand(105,Math.max(120,rect.height-190));
+    makeShape(type,x,y);
+  }
+}
+
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+
+function isPinch(lm){
+  const thumb=lm[4], index=lm[8];
+  return dist(thumb,index)<0.055;
+}
+
+function screenPoint(lm){
+  // video is mirrored; convert normalized camera coordinates to game coordinates
+  const r=game.getBoundingClientRect();
+  return {
+    x:(1-lm[8].x)*r.width,
+    y:lm[8].y*r.height
+  };
+}
+
+function shapeCenter(el){
+  return {
+    x:parseFloat(el.style.left)+el.offsetWidth/2,
+    y:parseFloat(el.style.top)+el.offsetHeight/2
+  };
+}
+
+function hitTest(p){
+  let best=null, bestD=85;
+  for(const el of shapes){
+    if(!el.isConnected) continue;
+    const c=shapeCenter(el), d=dist(p,c);
+    if(d<bestD){best=el;bestD=d}
+  }
+  return best;
+}
+
+function inBasket(el){
+  const br=document.getElementById("basket").getBoundingClientRect();
+  const gr=game.getBoundingClientRect();
+  const c=shapeCenter(el);
+  const x=c.x+gr.left, y=c.y+gr.top;
+  return x>br.left && x<br.right && y>br.top && y<br.bottom;
+}
+
+function finishShape(el){
+  const ok=el.dataset.type===target;
+  if(inBasket(el)){
+    if(ok){
+      score+=10;
+      scoreEl.textContent=score;
+      message.innerHTML=`✅ <b>Зөв!</b> ${levels[level-1].name}-ийг сагсаллаа. +10 оноо`;
+      el.remove();
+      shapes=shapes.filter(x=>x!==el);
+      if(!shapes.some(x=>x.dataset.type===target)){
+        message.innerHTML+=`<br>🎉 Энэ даалгаврыг амжилттай дуусгалаа!`;
+      }
+    }else{
+      score=Math.max(0,score-2);
+      scoreEl.textContent=score;
+      message.innerHTML=`❌ Энэ бол ${levels[level-1].name} биш. -2 оноо.`;
+    }
+  }
+  el.classList.remove("selected");
+}
+
+function processHands(result){
+  if(!result.landmarks || !result.landmarks.length){
+    status.textContent="Гар харагдахгүй байна";
+    if(held){held.classList.remove("selected");held=null}
+    return;
+  }
+  status.textContent="✋ Гар танигдлаа";
+  const lm=result.landmarks[0];
+  const p=screenPoint(lm);
+  const pinch=isPinch(lm);
+
+  if(pinch && !held){
+    held=hitTest(p);
+    if(held){
+      held.classList.add("selected");
+      lastX=p.x; lastY=p.y;
+      message.textContent="🤏 Барилаа! Сагс руу зөөгөөрэй.";
+    }
+  }
+
+  if(held && pinch){
+    let nx=p.x-held.offsetWidth/2;
+    let ny=p.y-held.offsetHeight/2;
+    const r=game.getBoundingClientRect();
+    nx=Math.max(5,Math.min(r.width-held.offsetWidth-5,nx));
+    ny=Math.max(85,Math.min(r.height-held.offsetHeight-5,ny));
+    held.style.left=nx+"px";
+    held.style.top=ny+"px";
+  }
+
+  if(held && !pinch){
+    const released=held;
+    held=null;
+    finishShape(released);
+  }
+}
+
+async function initAI(){
+  if(handLandmarker) return;
+  message.textContent="⏳ Гар таних AI ачаалж байна...";
+  const vision=await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm"
+  );
+  handLandmarker=await HandLandmarker.createFromOptions(vision,{
+    baseOptions:{
+      modelAssetPath:
+      "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+      delegate:"GPU"
+    },
+    runningMode:"VIDEO",
+    numHands:1
+  });
+  message.textContent="AI бэлэн! Камерын өмнө гараа харуулаарай.";
+}
+
+async function startCamera(){
+  try{
+    await initAI();
+    stream=await navigator.mediaDevices.getUserMedia({
+      video:{width:{ideal:640},height:{ideal:480},facingMode:"user"},
+      audio:false
+    });
+    video.srcObject=stream;
+    await video.play();
+    running=true;
+    startBtn.textContent="✅ Камер ажиллаж байна";
+    startBtn.disabled=true;
+    requestAnimationFrame(loop);
+  }catch(e){
+    console.error(e);
+    message.innerHTML="⚠️ Камер ашиглах зөвшөөрөл өгнө үү. Хэрэв файл шууд нээгдэхэд камер ажиллахгүй бол Chrome дээр localhost-оор ажиллуулж үзээрэй.";
+    status.textContent="Камерын алдаа";
+  }
+}
+
+async function loop(){
+  if(!running) return;
+  if(video.readyState>=2 && handLandmarker){
+    const now=performance.now();
+    const result=handLandmarker.detectForVideo(video,now);
+    processHands(result);
+  }
+  requestAnimationFrame(loop);
+}
+
+nextBtn.onclick=()=>{
+  if(level<levels.length){
+    level++;
+    spawnLevel();
+  }else{
+    message.innerHTML=`🏆 <b>Баяр хүргэе!</b> Та бүх 5 даалгаврыг дуусгалаа. Нийт оноо: ${score}`;
+  }
+};
+
+resetBtn.onclick=()=>{
+  score=0; level=1; scoreEl.textContent=0; spawnLevel();
+};
+
+startBtn.onclick=startCamera;
+window.addEventListener("resize",()=>{if(!shapes.length) spawnLevel()});
+spawnLevel();
+</script>
+</body>
+</html>
